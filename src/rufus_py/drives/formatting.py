@@ -86,7 +86,8 @@ def cluster():
     mount_dict = fu.find_usb()  # GETS THE FIRST KEY FOR NOW
     mount = next(iter(mount_dict))  # IMPORT THE INITIAL MOUNT POINT
     drive = fu.find_DN() # IMPORTS DRIVE NODE
-    # for logical blcok size
+    # for logical block size
+    # NEEDS TROUBLESHOOTING AND ERROR HANDLLING
     try:
         cluster1 = subprocess.run(["pkexec", "blockdev", "--getbsz", drive], capture_output=True, text=True, check=True)
     except FileNotFoundError:
@@ -105,7 +106,8 @@ def cluster():
     except Exception:
         unexpected()  
     # convert to sectors
-    sector = sector1/sector2
+    sector = cluster1/cluster2
+    return cluster1, cluster2, sector
     
 
 def quickformat():
@@ -124,6 +126,7 @@ def checkdevicebadblock():
     pass
 
 def dskformat():
+    cluster1, cluster2, sector = cluster() 
     mount_dict = fu.find_usb()  # GETS THE FIRST KEY FOR NOW
     mount = next(iter(mount_dict))  # IMPORT THE INITIAL MOUNT POINT
     drive = fu.find_DN() # IMPORTS DRIVE NODE
@@ -131,8 +134,8 @@ def dskformat():
     #These can later be turned to a notification or error box using pyqt
     #THIS WILL ASK FOR PASSWORD NEED TO FETCH PASSWORD so we are using pkexec from polkit to prompt the user for a password. need to figure out a way to use another method or implement this everywhere.
     # instead of FileNotFoundError we can also use shutil(?)
-    clusters = cluster.cluster1() 
-    sectors = cluster.sector() 
+    clusters = cluster1
+    sectors = sector
 
     if type==0:
         try:

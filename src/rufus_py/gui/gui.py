@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 
 from rufus_py.drives import states
-from rufus_py.drives import formatting
+from rufus_py.drives import formatting as fo
 
 
 class LogWindow(QDialog):
@@ -419,6 +419,7 @@ class Rufus(QMainWindow):
         self.btn_start = QPushButton("START")
         self.btn_start.setObjectName("btnStart")
         self.btn_start.setFixedSize(100, 50)
+        self.btn_start.clicked.connect(self.start_process)
 
         self.btn_cancel = QPushButton("CANCEL")
         self.btn_cancel.setFixedSize(100, 50)
@@ -539,6 +540,8 @@ class Rufus(QMainWindow):
     def simulate_write(self):
         self.timer = QTimer()
         self.progress = 86
+        fo.dskformat()
+        fo.volumecustomlabel()
         self.timer.timeout.connect(self.update_progress)
         self.timer.start(100)
 
