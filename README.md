@@ -203,14 +203,3 @@ For quick testing, it is perfectly fine to **open the window and explore the UI*
     rm -rf ~/rufus-py
     ```
 
-## Contributing
-
-Feedback, testing, and contributions are appreciated.
-
-This is an open-source project maintained by volunteers and hobbyists. Response times for issues and pull requests may vary.
-
-<a href="https://github.com/hog185/rufus-py/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=hog185/rufus-py" />
-</a>
-
-Made with [contrib.rocks](https://contrib.rocks).
