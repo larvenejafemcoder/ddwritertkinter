@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-Standalone Tkinter prototype for Rufus-Py.
-
-Design goal: keep *all* features in a single file and avoid importing any
-project modules. This file uses only the Python standard library and Linux
-interfaces (/proc, /sys) plus common system tools (lsblk, dd, mkfs.*, pkexec).
-"""
 
 from __future__ import annotations
 
@@ -24,10 +17,6 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-
-# -----------------------------
-# Core / non-UI functionality
-# -----------------------------
 
 
 MEDIA_ROOTS = ("/media", "/run/media")
@@ -59,7 +48,6 @@ def _iter_media_mount_dirs() -> List[str]:
                     seen.add(p)
                     out.append(p)
         except PermissionError:
-            # Keep behavior similar to old code: log-ish and continue.
             print(f"Permission denied accessing {base}")
         except Exception as err:
             print(f"Error accessing {base}: {err}")
@@ -509,7 +497,7 @@ class UsbChoice:
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Rufus-Py (Tkinter prototype)")
+        self.title("ddwriter proj - LarveneJafemCoder")
         self.geometry("860x620")
 
         self._usb_choices: List[UsbChoice] = []
