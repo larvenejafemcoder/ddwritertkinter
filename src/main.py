@@ -147,6 +147,18 @@ def resolve_device_node(mount_path: str) -> Optional[str]:
     return None
 
 
+def resolve_partition_device(mount_path: str) -> Optional[str]:
+    """
+    Resolve mount path -> partition device node (e.g. /dev/sdb1) mounted at that path.
+    Used for formatting and labeling; use resolve_device_node() for dd (whole disk).
+    """
+    normalized = os.path.normpath(mount_path)
+    for dev, mnt in _read_proc_mounts():
+        if os.path.normpath(mnt) == normalized:
+            return dev
+    return None
+
+
 def is_removable_device(device_node: str) -> bool:
     """
     Safety check: confirm device is removable using /sys/block/<name>/removable.
@@ -375,13 +387,12 @@ def _run_pkexec_capture(args: List[str]) -> Optional[str]:
         return None
 
 
-def cluster() -> Tuple[Optional[int], Optional[int], Optional[int]]:
+def cluster(mount_path: Optional[str] = None) -> Tuple[Optional[int], Optional[int], Optional[int]]:
     """
     Return (logical_block_size, physical_sector_size, sector_ratio).
-    Note: the original Python had type bugs (dividing CompletedProcess objects);
-    this uses the intended meaning by parsing stdout to integers.
+    If mount_path is given, use the partition at that mount; otherwise the first USB device.
     """
-    drive = find_dn()
+    drive = resolve_partition_device(mount_path) if mount_path else find_dn()
     if not drive:
         return None, None, None
 
@@ -400,25 +411,21 @@ def cluster() -> Tuple[Optional[int], Optional[int], Optional[int]]:
         return None, None, None
 
 
-def volumecustomlabel(fs_type: int, new_label: str) -> bool:
-    mount_dict = find_usb()
-    if not mount_dict:
-        return False
-    mount = next(iter(mount_dict))
-    drive = find_dn()
-    if not drive:
+def volumecustomlabel(mount_path: str, fs_type: int, new_label: str) -> bool:
+    partition = resolve_partition_device(mount_path)
+    if not partition:
         return False
 
-    if not _run_pkexec(["umount", drive]):
+    if not _run_pkexec(["umount", partition]):
         return False
 
     ok = False
     if fs_type == 0:
-        ok = _run_pkexec(["ntfslabel", drive, new_label])
+        ok = _run_pkexec(["ntfslabel", partition, new_label])
     elif fs_type in (1, 2):
-        ok = _run_pkexec(["fatlabel", drive, new_label])
+        ok = _run_pkexec(["fatlabel", partition, new_label])
     elif fs_type == 3:
-        ok = _run_pkexec(["e2label", drive, new_label])
+        ok = _run_pkexec(["e2label", partition, new_label])
     else:
         _unexpected()
         ok = False
@@ -426,45 +433,47 @@ def volumecustomlabel(fs_type: int, new_label: str) -> bool:
     if not ok:
         return False
 
-    return _run_pkexec(["mount", drive, mount])
+    return _run_pkexec(["mount", partition, mount_path])
 
 
-def dskformat(fs_type: int) -> bool:
-    c1, _c2, sector = cluster()
-    mount_dict = find_usb()
-    if not mount_dict:
+def dskformat(mount_path: str, fs_type: int) -> bool:
+    partition = resolve_partition_device(mount_path)
+    if not partition:
         return False
-    mount = next(iter(mount_dict))
 
+    c1, _c2, sector = cluster(mount_path)
     if c1 is None or sector is None:
         return False
 
     clusters = str(c1)
     sectors = str(sector)
 
+    if not _run_pkexec(["umount", partition]):
+        return False
+
+    ok = False
     if fs_type == 0:
-        ok = _run_pkexec(["mkfs.ntfs", "-c", clusters, "-Q", mount])
+        ok = _run_pkexec(["mkfs.ntfs", "-c", clusters, "-Q", partition])
         if ok:
             print("success format to ntfs!")
-        return ok
-    if fs_type == 1:
-        ok = _run_pkexec(["mkfs.vfat", "-s", sectors, "-F", "32", mount])
+    elif fs_type == 1:
+        ok = _run_pkexec(["mkfs.vfat", "-s", sectors, "-F", "32", partition])
         if ok:
             print("success format to fat32!")
-        return ok
-    if fs_type == 2:
-        ok = _run_pkexec(["mkfs.exfat", "-b", clusters, mount])
+    elif fs_type == 2:
+        ok = _run_pkexec(["mkfs.exfat", "-b", clusters, partition])
         if ok:
             print("success format to exFAT!")
-        return ok
-    if fs_type == 3:
-        ok = _run_pkexec(["mkfs.ext4", "-b", clusters, mount])
+    elif fs_type == 3:
+        ok = _run_pkexec(["mkfs.ext4", "-b", clusters, partition])
         if ok:
             print("success format to ext4!")
-        return ok
+    else:
+        _unexpected()
 
-    _unexpected()
-    return False
+    if ok:
+        _run_pkexec(["mount", partition, mount_path])
+    return ok
 
 
 # Original stubs are preserved as no-ops
@@ -481,8 +490,35 @@ def checkdevicebadblock() -> None:
 
 
 # -----------------------------
-# Tkinter UI
+# Tkinter UI — Rufus-style dark theme
 # -----------------------------
+
+# Dark theme palette (Rufus-like)
+_THEME_BG = "#0d0d0d"
+_THEME_FRAME_BG = "#1a1a1a"
+_THEME_FIELD_BG = "#3c3c3c"
+_THEME_FG = "#ffffff"
+_THEME_FG_DIM = "#b0b0b0"
+_THEME_BORDER = "#505050"
+_THEME_ACCENT_BORDER = "#6a6a6a"
+# Font: clean sans-serif (Segoe UI on Windows, fallback on Linux)
+_THEME_FONT = "Segoe UI"
+_THEME_FONT_FALLBACK = "Liberation Sans"
+_THEME_FONT_SIZE = 10
+_THEME_FONT_SIZE_HEADING = 11
+
+
+def _theme_font(root: tk.Tk) -> Tuple[str, int]:
+    """Return (family, size) for the theme; use first available font."""
+    try:
+        from tkinter import font as tkfont
+        families = set(tkfont.families())
+        for name in (_THEME_FONT, _THEME_FONT_FALLBACK, "DejaVu Sans", "Sans"):
+            if name in families:
+                return (name, _THEME_FONT_SIZE)
+    except Exception:
+        pass
+    return (_THEME_FONT, _THEME_FONT_SIZE)
 
 
 @dataclass
@@ -504,9 +540,111 @@ class App(tk.Tk):
         self._log_queue: "queue.Queue[str]" = queue.Queue()
         self._worker: Optional[threading.Thread] = None
 
+        self._apply_dark_theme()
         self._build_ui()
         self._refresh_usb_list()
         self.after(100, self._drain_log_queue)
+
+    def _apply_dark_theme(self) -> None:
+        """Apply Rufus-style dark mode: near-black background, white text, dark gray inputs."""
+        self.configure(bg=_THEME_BG)
+
+        font_family, font_size = _theme_font(self)
+        self.option_add("*Font", (font_family, font_size))
+
+        style = ttk.Style(self)
+        style.theme_use("clam")
+
+        # Base colors for all ttk widgets
+        style.configure(
+            ".",
+            background=_THEME_FRAME_BG,
+            foreground=_THEME_FG,
+            fieldbackground=_THEME_FIELD_BG,
+            troughcolor=_THEME_FIELD_BG,
+            bordercolor=_THEME_BORDER,
+            darkcolor=_THEME_FRAME_BG,
+            lightcolor=_THEME_FRAME_BG,
+        )
+        style.configure(
+            "TFrame",
+            background=_THEME_FRAME_BG,
+        )
+        style.configure(
+            "TLabel",
+            background=_THEME_FRAME_BG,
+            foreground=_THEME_FG,
+            font=(font_family, font_size),
+        )
+        style.configure(
+            "TLabelframe",
+            background=_THEME_FRAME_BG,
+            foreground=_THEME_FG,
+        )
+        style.configure(
+            "TLabelframe.Label",
+            background=_THEME_FRAME_BG,
+            foreground=_THEME_FG,
+            font=(font_family, _THEME_FONT_SIZE_HEADING, "bold"),
+        )
+        style.configure(
+            "TButton",
+            background=_THEME_FIELD_BG,
+            foreground=_THEME_FG,
+            font=(font_family, font_size),
+            padding=(12, 4),
+        )
+        style.map(
+            "TButton",
+            background=[("active", "#4d4d4d"), ("pressed", "#2d2d2d")],
+            foreground=[("active", _THEME_FG)],
+        )
+        style.configure(
+            "TEntry",
+            fieldbackground=_THEME_FIELD_BG,
+            foreground=_THEME_FG,
+            insertcolor=_THEME_FG,
+            font=(font_family, font_size),
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground=_THEME_FIELD_BG,
+            foreground=_THEME_FG,
+            background=_THEME_FIELD_BG,
+            arrowcolor=_THEME_FG,
+            font=(font_family, font_size),
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", _THEME_FIELD_BG)],
+            foreground=[("readonly", _THEME_FG)],
+        )
+        style.configure(
+            "TCheckbutton",
+            background=_THEME_FRAME_BG,
+            foreground=_THEME_FG,
+            font=(font_family, font_size),
+        )
+        style.map(
+            "TCheckbutton",
+            background=[("active", _THEME_FRAME_BG)],
+            foreground=[("active", _THEME_FG)],
+        )
+        style.configure(
+            "Horizontal.TProgressbar",
+            background=_THEME_FIELD_BG,
+            troughcolor=_THEME_FRAME_BG,
+            bordercolor=_THEME_BORDER,
+            lightcolor=_THEME_FIELD_BG,
+            darkcolor=_THEME_FIELD_BG,
+        )
+
+        # OptionDB for tk widgets (e.g. dialogs); some tk widgets read this
+        self.option_add("*Background", _THEME_FRAME_BG)
+        self.option_add("*Foreground", _THEME_FG)
+        self.option_add("*Entry*Background", _THEME_FIELD_BG)
+        self.option_add("*Entry*Foreground", _THEME_FG)
+        self._theme_font = (font_family, font_size)
 
     def _build_ui(self) -> None:
         # Try to loosely echo the classic Rufus layout:
@@ -617,7 +755,15 @@ class App(tk.Tk):
 
         self.log = tk.Text(status, height=10, wrap="word")
         self.log.grid(row=0, column=0, sticky="nsew")
-        self.log.configure(state="disabled")
+        self.log.configure(
+            state="disabled",
+            bg=_THEME_FIELD_BG,
+            fg=_THEME_FG,
+            insertbackground=_THEME_FG,
+            selectbackground=_THEME_ACCENT_BORDER,
+            selectforeground=_THEME_FG,
+            font=getattr(self, "_theme_font", (_THEME_FONT, _THEME_FONT_SIZE)),
+        )
 
         self.progress = ttk.Progressbar(status, mode="indeterminate")
         self.progress.grid(row=1, column=0, sticky="ew", pady=(8, 0))
@@ -794,7 +940,7 @@ class App(tk.Tk):
             f"This will FORMAT (erase) the selected device.\n\nTarget: {dev}\nFilesystem: {self.fs_var.get()}\n\nContinue?",
         ):
             return
-        self._run_in_worker("Format", lambda: dskformat(fs_type))
+        self._run_in_worker("Format", lambda: dskformat(mount, fs_type))
 
     def _set_label(self) -> None:
         mount = self._selected_mount()
@@ -806,10 +952,11 @@ class App(tk.Tk):
             messagebox.showerror("Set label", "Provide a label.")
             return
         fs_type = self._fs_type()
-        self._run_in_worker("Set label", lambda: volumecustomlabel(fs_type, label))
+        self._run_in_worker("Set label", lambda: volumecustomlabel(mount, fs_type, label))
 
     def _cluster_info(self) -> None:
-        c1, c2, sec = cluster()
+        mount = self._selected_mount()
+        c1, c2, sec = cluster(mount)
         if c1 is None:
             messagebox.showerror("Cluster info", "Could not read cluster info.")
             return
